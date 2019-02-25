@@ -2,6 +2,7 @@ import unittest
 import subprocess
 import tempfile
 import os
+from io import StringIO
 
 this_file_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -12,13 +13,16 @@ class TestStringMethods(unittest.TestCase):
         config = kwargs.get('config', {})
         args = kwargs.get('args', [])
         env = kwargs.get('env', None)
+        stdin = kwargs.get('stdin', None)
         configfile = tempfile.mkstemp()[1]
         with open(configfile, 'w') as f:
             f.write(config)
         cmds = ['python', this_file_dir + '/../src/clictl.py', '--config', configfile] + args
         print(cmds)
         try:
-            return 0, subprocess.check_output(" ".join(cmds), env = env, shell = True).strip()
+            p = subprocess.Popen(" ".join(cmds), env = env, shell = True, stdin = subprocess.PIPE if stdin is not None else None)
+            stdout, _ = p.communicate(stdin)
+            return p.poll(),stdout
         except subprocess.CalledProcessError as e:
             return e.returncode, e.output
 
@@ -28,6 +32,15 @@ class TestStringMethods(unittest.TestCase):
                 pipeline:
                     - echo: hello
             """,
+        )
+        self.assertEqual('hello', out)
+
+    def test_stdin(self):
+        code, out = self.run_with_config(
+            config = """
+            """,
+            args = ['--', 'cat'],
+            stdin = StringIO(u'hello world')
         )
         self.assertEqual('hello', out)
 
