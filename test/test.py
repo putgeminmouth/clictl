@@ -2,7 +2,6 @@ import unittest
 import subprocess
 import tempfile
 import os
-from io import StringIO
 
 this_file_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -10,19 +9,19 @@ this_file_dir = os.path.dirname(os.path.realpath(__file__))
 class TestStringMethods(unittest.TestCase):
 
     def run_with_config(self, **kwargs):
-        config = kwargs.get('config', {})
+        config = kwargs.get('config', '{}')
         args = kwargs.get('args', [])
         env = kwargs.get('env', None)
         stdin = kwargs.get('stdin', None)
         configfile = tempfile.mkstemp()[1]
         with open(configfile, 'w') as f:
             f.write(config)
-        cmds = ['python', this_file_dir + '/../src/clictl.py', '--config', configfile] + args
+        cmds = ['python', this_file_dir + '/../src/clictl.py', '--config-file', configfile] + args
         print(cmds)
         try:
-            p = subprocess.Popen(" ".join(cmds), env = env, shell = True, stdin = subprocess.PIPE if stdin is not None else None)
+            p = subprocess.Popen(" ".join(cmds), env = env, shell = True, stdin = subprocess.PIPE if stdin is not None else None, stdout = subprocess.PIPE)
             stdout, _ = p.communicate(stdin)
-            return p.poll(),stdout
+            return p.wait(),stdout.strip()
         except subprocess.CalledProcessError as e:
             return e.returncode, e.output
 
@@ -37,12 +36,10 @@ class TestStringMethods(unittest.TestCase):
 
     def test_stdin(self):
         code, out = self.run_with_config(
-            config = """
-            """,
             args = ['--', 'cat'],
-            stdin = StringIO(u'hello world')
+            stdin = 'hello world'
         )
-        self.assertEqual('hello', out)
+        self.assertEqual('hello world', out)
 
     def test_interpolation_env(self):
         code, out = self.run_with_config(

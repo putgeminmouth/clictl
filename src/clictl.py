@@ -225,7 +225,9 @@ def parse_bool(name, v):
         return False
     else:
         raise argparse.ArgumentTypeError('Boolean value expected for {}, found "{}"'.format(name, v))
-parser.add_argument('--config', required=False, default=None)
+config_group = parser.add_mutually_exclusive_group()
+config_group.add_argument('--config', required=False, default=None)
+config_group.add_argument('--config-file', required=False, default=None)
 parser.add_argument('--force', type=partial(parse_bool, 'force'), nargs='?', const=True, required=False, default=False)
 parser.add_argument('--verbose', type=partial(parse_bool, 'verbose'), nargs='?', const=True, required=False, default=False)
 
@@ -245,14 +247,19 @@ def parse_config(json):
     pipeline = map(AstParser.parse_pipeline_item, json['pipeline']) if 'pipeline' in json else []
     return Config(before = before, pipeline = pipeline)
 
-if args.config:
-    with open(args.config) as f:
+if args.config_file:
+    with open(args.config_file) as f:
         config_json = yaml.load(f)
-        # if yaml is not None:
-        #     config_json = yaml.load(f)
-        # else:
-        #     config_json = json.load(f)
-        config = parse_config(config_json)
+        if config_json is None:
+            eprint('Invalid config file')
+            sys.exit(2)
+    config = parse_config(config_json)
+elif args.config:
+    config_json = yaml.load(args.config)
+    if config_json is None:
+        eprint('Invalid config')
+        sys.exit(2)
+    config = parse_config(config_json)
 else:
     config = Config([], [])
 
