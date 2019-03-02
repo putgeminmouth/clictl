@@ -34,6 +34,25 @@ class TestStringMethods(unittest.TestCase):
         )
         self.assertEqual('hello', out)
 
+    def test_assign(self):
+        code, out = self.run_with_config(
+            config = """
+                - assign:
+                    foo: bar
+                - echo: '{usr.foo}'
+            """,
+        )
+        self.assertEqual('bar', out)
+
+    def test_assign_fail(self):
+        code, out = self.run_with_config(
+            config = """
+                - assign:
+                    'usr.foo': '.bar'
+            """,
+        )
+        self.assertNotEqual(0, code)
+
     def test_stdin(self):
         code, out = self.run_with_config(
             args = ['--', 'cat'],

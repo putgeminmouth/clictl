@@ -38,13 +38,17 @@ class Context:
         self.formatter = Formatter()
 
     def eval(self, path):
-        return self.formatter.vformat(path, self.cmds, self.vars)
+        if isinstance(path, basestring):
+            return self.formatter.vformat(path, self.cmds, self.vars)
+        else:
+            return path.execute(self)
 
     def verbose_log(self, ast):
         if self.verbose > 0:
             eprint(datetime.now(), self.to_string(ast))
 
-    def to_string(self, x):
+    @staticmethod
+    def to_string(x):
         if hasattr(x, 'to_string'):
             return x.to_string()
         else:
@@ -72,7 +76,33 @@ class Ast:
             ctx.verbose_log(self)
             print(ctx.eval(self.msg))
         def to_string(self):
-            return 'echo ({})'.format(self.msg)
+            return 'echo ({})'.format(Context.to_string(self.msg))
+
+    class ShellExec:
+        def __init__(self, cmd):
+            self.cmd = cmd
+        def execute(self, ctx):
+            ctx.verbose_log(self)
+            p = subprocess.Popen(self.cmd, shell = True, stdout = subprocess.PIPE)
+            stdout, _ = p.communicate()
+            p.wait()
+            return stdout.strip()
+        def to_string(self):
+            return 'shellExec ({})'.format(self.cmd)
+
+    class Assign:
+        def __init__(self, path, value):
+            self.path = path
+            self.value = value
+            if '.' in path:
+                raise Exception('{} - invalid path ({})', self.to_string(), self.path)
+        def execute(self, ctx):
+            ctx.verbose_log(self)
+            evaled = ctx.eval(self.value)
+            ctx.vars['usr'][self.path] = evaled
+            return evaled
+        def to_string(self):
+            return 'assign ({} := {})'.format(self.path, Context.to_string(self.value))
 
     class Match:
         def __init__(self, pattern, expr):
@@ -91,7 +121,7 @@ class Ast:
             ctx.verbose_log(self)
             return reduce(lambda l,r: l == r, map(ctx.eval, self.items))
         def to_string(self):
-            return '({})'.format(' == '.join(map(ctx.to_string, self.items)))
+            return '({})'.format(' == '.join(map(Context.to_string, self.items)))
 
     class Not:
         def __init__(self, inner):
@@ -109,7 +139,7 @@ class Ast:
             ctx.verbose_log(self)
             return reduce(lambda l,r: l and r, map(lambda x: x.execute(ctx), self.items))
         def to_string(self):
-            return '({})'.format(' and '.join(map(ctx.to_string, self.items)))
+            return '({})'.format(' and '.join(map(Context.to_string, self.items)))
 
     class Or:
         def __init__(self, items):
@@ -118,7 +148,7 @@ class Ast:
             ctx.verbose_log(self)
             return reduce(lambda l,r: l or r, map(lambda x: x.execute(ctx), self.items))
         def to_string(self):
-            return '({})'.format(' and '.join(map(ctx.to_string, self.items)))
+            return '({})'.format(' and '.join(map(Context.to_string, self.items)))
 
     class Require:
         def __init__(self, predicate):
@@ -204,6 +234,13 @@ class AstParser:
         return Ast.If(condition, thens, elses)
 
     @staticmethod
+    def parse_or_str(json, parser):
+        if isinstance(json, basestring):
+            return json
+        else:
+            return parser(json)
+
+    @staticmethod
     def parse_pipeline_item(json):
         type_name = json.keys()[0]
         definition = json[type_name]
@@ -213,7 +250,11 @@ class AstParser:
         elif type_name == 'if':
             return AstParser.parse_if(definition)
         elif type_name == 'echo':
-            return Ast.Echo(json.values()[0])
+            return Ast.Echo(AstParser.parse_or_str(definition, lambda j: AstParser.parse_pipeline_item(j)))
+        elif type_name == 'shell':
+            return Ast.ShellExec(json.values()[0])
+        elif type_name == 'assign':
+            return Ast.Assign(definition.keys()[0], AstParser.parse_or_str(definition.values()[0], lambda j: AstParser.parse_pipeline_item(j)))
         else:
             raise Exception('unknown pipeline step "{}"'.format(type_name))
 
@@ -240,12 +281,23 @@ args = parser.parse_args(clictl_args)
 cmds = other_args
 
 
-Config = namedtuple('Config', ['before', 'pipeline'])
+Config = namedtuple('Config', ['before', 'pipeline', 'after'])
 
 def parse_config(json):
-    before = map(AstParser.parse_pipeline_item, json['before']) if 'before' in json else []
-    pipeline = map(AstParser.parse_pipeline_item, json['pipeline']) if 'pipeline' in json else []
-    return Config(before = before, pipeline = pipeline)
+
+    before = map(AstParser.parse_pipeline_item, json['before']) if 'before' in json else None
+    pipeline = map(AstParser.parse_pipeline_item, json['pipeline']) if 'pipeline' in json else None
+    after = map(AstParser.parse_pipeline_item, json['after']) if 'after' in json else None
+
+    if ( not before and
+         not pipeline and
+         not after ):
+        if isinstance(json, collections.Mapping) and len(json.keys()) > 0:
+            pipeline = [ AstParser.parse_pipeline_item(json) ]
+        elif isinstance(json, list):
+            pipeline = map(AstParser.parse_pipeline_item, json)
+
+    return Config(before = before or [], pipeline = pipeline or [], after = after or [])
 
 if args.config_file:
     with open(args.config_file) as f:
@@ -266,6 +318,7 @@ else:
 vars = {
     "args": cmds,
     "env": os.environ,
+    "usr": {},
     "config": {
         "force": args.force is True
     }
@@ -279,6 +332,9 @@ try:
 
     for p in config.pipeline:
         p.execute(ctx)
+
+    for b in config.after:
+        b.execute(ctx)
 
 except Exception as e:
     eprint('Error in pipeline:', str(e))
