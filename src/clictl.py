@@ -249,7 +249,7 @@ class AstParser:
             return Ast.Echo(AstParser.parse_or_str(definition, lambda j: AstParser.parse_pipeline_item(j)))
         elif type_name == 'shell':
             return Ast.ShellExec(json.values()[0])
-        elif type_name == 'assign':
+        elif type_name in {'assign', ':='}:
             return Ast.Assign(definition.keys()[0], AstParser.parse_or_str(definition.values()[0], lambda j: AstParser.parse_pipeline_item(j)))
         else:
             raise AstParser.ParseException('unknown pipeline step "{}"'.format(type_name))
