@@ -94,8 +94,6 @@ class Ast:
         def __init__(self, path, value):
             self.path = path
             self.value = value
-            if '.' in path:
-                raise Exception('{} - invalid path ({})', self.to_string(), self.path)
         def execute(self, ctx):
             ctx.verbose_log(self)
             evaled = ctx.eval(self.value)
@@ -150,13 +148,15 @@ class Ast:
         def to_string(self):
             return '({})'.format(' and '.join(map(Context.to_string, self.items)))
 
+    class RequirementNotMet(Exception):
+        pass
     class Require:
         def __init__(self, predicate):
             self.predicate = predicate
         def execute(self, ctx):
             ctx.verbose_log(self)
             if not self.predicate.execute(ctx):
-                raise Exception(self.to_string())
+                raise Ast.RequirementNotMet(self.to_string())
             return ctx
         def to_string(self):
             return 'require ({})'.format(self.predicate.to_string())
@@ -178,6 +178,9 @@ class Ast:
             return 'if ({}) then ({}) else ({})'.format(self.condition.to_string(), [t.to_string() for t in self.thens], [t.to_string() for t in self.elses])
 
 class AstParser:
+    class ParseException(Exception):
+        pass
+
     @staticmethod
     def parse_arraylike_pairs(json):
         if isinstance(json, dict):
@@ -185,10 +188,10 @@ class AstParser:
         elif isinstance(json, list):
             ret = json
         else:
-            raise Exception('expected array or object of pairs')
+            raise AstParser.ParseException('expected array or object of pairs')
 
         if len(ret) < 1:
-            raise Exception('expected at least two values')
+            raise AstParser.ParseException('expected at least two values')
         return ret
 
     @staticmethod
@@ -224,7 +227,7 @@ class AstParser:
         elif type_name in {'neq', '!='}:
             return Ast.Not(Ast.Equal(definition))
         else:
-            raise Exception('unknown predicate of type "{}"'.format(type_name))
+            raise AstParser.ParseException('unknown predicate of type "{}"'.format(type_name))
 
     @staticmethod
     def parse_if(json):
@@ -256,7 +259,7 @@ class AstParser:
         elif type_name == 'assign':
             return Ast.Assign(definition.keys()[0], AstParser.parse_or_str(definition.values()[0], lambda j: AstParser.parse_pipeline_item(j)))
         else:
-            raise Exception('unknown pipeline step "{}"'.format(type_name))
+            raise AstParser.ParseException('unknown pipeline step "{}"'.format(type_name))
 
 parser = argparse.ArgumentParser()
 def parse_bool(name, v):
@@ -305,15 +308,25 @@ if args.config_file:
         if config_json is None:
             eprint('Invalid config file')
             sys.exit(2)
-    config = parse_config(config_json)
 elif args.config:
     config_json = yaml.load(args.config)
     if config_json is None:
         eprint('Invalid config')
         sys.exit(2)
-    config = parse_config(config_json)
 else:
-    config = Config([], [])
+    config_json = None
+
+try:
+    if config_json is not None:
+        config = parse_config(config_json)
+    else:
+        config = Config([], [])
+
+except AstParser.ParseException as e:
+    if args.verbose:
+        traceback.print_exc()
+    eprint('Invalid configuration:', e.message)
+    sys.exit(2)
 
 vars = {
     "args": cmds,
@@ -336,6 +349,11 @@ try:
     for b in config.after:
         b.execute(ctx)
 
+except Ast.RequirementNotMet as e:
+    if args.verbose:
+        traceback.print_exc()
+    eprint('Requirement not met:', e.message)
+    sys.exit(2)
 except Exception as e:
     eprint('Error in pipeline:', str(e))
     traceback.print_exc()
