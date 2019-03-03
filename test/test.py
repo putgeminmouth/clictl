@@ -460,5 +460,22 @@ class TestStringMethods(unittest.TestCase):
         self.assertEqual('', out)
         self.assertEqual(0, code)
 
+    def test_if_else(self):
+        code, out = self.run_with_config(
+            config = """
+                pipeline:
+                    - if:
+                        condition: false
+                        then:
+                            - echo: "oops"
+                        else:
+                            echo: "{env.foo}"
+            """,
+            args = ['--', 'true'],
+            env = { 'foo': 'bar' }
+        )
+        self.assertEqual('bar', out)
+        self.assertEqual(0, code)
+
 if __name__ == '__main__':
     unittest.main()

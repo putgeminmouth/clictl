@@ -1,3 +1,5 @@
+#!/usr/bin/env python2
+
 from __future__ import print_function
 import os
 import subprocess
@@ -29,6 +31,12 @@ def attribute_dict(orig):
         if isinstance(v, collections.Mapping):
             d[k] = attribute_dict(v)
     return AttributeDict(d)
+
+def map_or_single(fn, list_or_single):
+    if isinstance(list_or_single, list):
+        return map(fn, list_or_single)
+    else:
+        return fn(list_or_single)
 
 class Context:
     def __init__(self, cmds, vars, verbose):
@@ -169,11 +177,9 @@ class Ast:
         def execute(self, ctx):
             ctx.verbose_log(self)
             if self.condition.execute(ctx):
-                for t in self.thens:
-                    t.execute(ctx)
+                return map_or_single(lambda x: x.execute(ctx), self.thens) if self.thens is not None else None
             else:
-                for e in self.elses:
-                    e.execute(ctx)
+                return map_or_single(lambda x: x.execute(ctx), self.elses) if self.elses is not None else None
         def to_string(self):
             return 'if ({}) then ({}) else ({})'.format(self.condition.to_string(), [t.to_string() for t in self.thens], [t.to_string() for t in self.elses])
 
@@ -219,8 +225,8 @@ class AstParser:
     @staticmethod
     def parse_if(json):
         condition = AstParser.parse_predicate(json['condition'])
-        thens = [AstParser.parse_pipeline_item(t) for t in json['then']] if 'then' in json else []
-        elses = [AstParser.parse_pipeline_item(t) for t in json['else']] if 'else' in json else []
+        thens = map_or_single(AstParser.parse_pipeline_item, json['then']) if 'then' in json else None
+        elses = map_or_single(AstParser.parse_pipeline_item, json['else']) if 'else' in json else None
         return Ast.If(condition, thens, elses)
 
     @staticmethod
