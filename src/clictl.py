@@ -112,7 +112,7 @@ class Ast:
             ctx.verbose_log(self)
             return re.search(self.pattern, ctx.eval(self.expr)) is not None
         def to_string(self):
-            return '{} matches /{}/'.format(self.expr, self.pattern)
+            return '{} match /{}/'.format(ctx.to_string(self.expr), ctx.to_string(self.pattern))
 
     class Equal:
         def __init__(self, items):
@@ -194,7 +194,7 @@ class AstParser:
     @staticmethod
     def parse_match(json):
         pattern = json.keys()[0]
-        expr = json[pattern]
+        expr = AstParser.parse_or_str(json[pattern], AstParser.parse_pipeline_item)
         return Ast.Match(pattern, expr)
 
     @staticmethod
