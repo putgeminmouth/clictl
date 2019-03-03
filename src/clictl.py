@@ -182,19 +182,6 @@ class AstParser:
         pass
 
     @staticmethod
-    def parse_arraylike_pairs(json):
-        if isinstance(json, dict):
-            ret = reduce(lambda l,r: l + [r], json.iteritems(), [])
-        elif isinstance(json, list):
-            ret = json
-        else:
-            raise AstParser.ParseException('expected array or object of pairs')
-
-        if len(ret) < 1:
-            raise AstParser.ParseException('expected at least two values')
-        return ret
-
-    @staticmethod
     def parse_match(json):
         pattern = json.keys()[0]
         expr = AstParser.parse_or_str(json[pattern], AstParser.parse_pipeline_item)
