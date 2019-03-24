@@ -176,7 +176,7 @@ class Ast:
             self.elses = elses
         def execute(self, ctx):
             ctx.verbose_log(self)
-            if self.condition.execute(ctx):
+            if ctx.eval(self.condition):
                 return map_or_single(lambda x: ctx.eval(x), self.thens) if self.thens is not None else None
             else:
                 return map_or_single(lambda x: ctx.eval(x), self.elses) if self.elses is not None else None
@@ -224,10 +224,19 @@ class AstParser:
 
     @staticmethod
     def parse_if(json):
-        condition = AstParser.parse_predicate(json['condition'])
-        thens = AstParser.parse_or_str(json['then'], lambda x: map_or_single(AstParser.parse_pipeline_item, x)) if 'then' in json else None
-        elses = AstParser.parse_or_str(json['else'], lambda x: map_or_single(AstParser.parse_pipeline_item, x)) if 'else' in json else None
+        t = AstParser.parse_tuple(json, ['condition', 'then', 'else'])
+        condition = AstParser.parse_or_str(t['condition'], AstParser.parse_predicate)
+        thens = AstParser.parse_or_str(t['then'], lambda x: map_or_single(AstParser.parse_pipeline_item, x)) if 'then' in t else None
+        elses = AstParser.parse_or_str(t['else'], lambda x: map_or_single(AstParser.parse_pipeline_item, x)) if 'else' in t else None
         return Ast.If(condition, thens, elses)
+
+
+    @staticmethod
+    def parse_tuple(json, keys):
+        if isinstance(json, list):
+            return reduce(lambda l,r: l.update({r[0]:r[1]}) or l, zip(keys, json), {})
+        else:
+            return json
 
     @staticmethod
     def parse_or_str(json, parser):
